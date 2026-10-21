@@ -1,0 +1,11 @@
+#!/bin/bash
+# 打包静态页面到 deploy/dist（Cloudflare Workers 静态资源）
+set -eu
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIST="$ROOT/deploy/dist"
+rm -rf "$DIST"
+mkdir -p "$DIST/data"
+cp "$ROOT/index.html" "$ROOT/app.js" "$ROOT/styles.css" "$DIST/"
+cp "$ROOT/data/factors.js" "$ROOT/data/factors.json" "$ROOT/data/status.json" "$DIST/data/" 2>/dev/null || true
+echo "已打包到 $DIST"
+ls -R "$DIST" | head -20
