@@ -14,6 +14,14 @@
 失败时保留旧数据不动，仅在 status.json 中记录错误。
 """
 import json, os, socket, sys, time, traceback, urllib.request
+from datetime import datetime, timedelta, timezone
+
+CST = timezone(timedelta(hours=8))
+
+
+def bj_stamp():
+    """当前时间（北京时间 UTC+8），带时区偏移，避免显示歧义"""
+    return datetime.now(CST).strftime("%Y-%m-%dT%H:%M:%S") + "+08:00"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -149,7 +157,7 @@ def jiao_fen_split(price):
 def write_status(payload, ok=True, err=None):
     st = {
         "ok": ok,
-        "lastUpdated": payload.get("updatedAt") if payload else time.strftime("%Y-%m-%d %H:%M:%S"),
+        "lastUpdated": payload.get("updatedAt") if payload else bj_stamp(),
         "lastDate": payload["records"][-1]["date"] if payload else None,
         "lastFactor": payload["records"][-1]["factorStr"] if payload else None,
         "records": len(payload["records"]) if payload else 0,
@@ -205,7 +213,7 @@ def main():
         })
 
     payload = {
-        "updatedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "updatedAt": bj_stamp(),
         "source": "东方财富 push2his 日K（不复权）",
         "stocks": [{"code": s["code"], "name": s["name"]} for s in STOCKS],
         "records": records,
