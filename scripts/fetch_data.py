@@ -116,6 +116,15 @@ def fetch_sina(symbol, tries=3):
                 })
             if not rows:
                 raise RuntimeError("sina empty")
+            # 与东财主源口径对齐：只保留 BEGIN 之后的交易日
+            rows = [r for r in rows if r["date"].replace("-", "") >= BEGIN]
+            if not rows:
+                raise RuntimeError("sina no rows after " + BEGIN)
+            # 补齐涨跌幅（新浪不返回）
+            rows.sort(key=lambda r: r["date"])
+            for i, r in enumerate(rows):
+                prev = rows[i - 1]["close"] if i > 0 else 0.0
+                r["pct"] = round((r["close"] - prev) / prev * 100, 2) if prev else 0.0
             return {"code": symbol, "name": symbol, "rows": rows}
         except Exception as e:
             last_err = e
