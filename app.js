@@ -33,6 +33,34 @@
   const fmt2 = n => n.toFixed(2);
   const pad = n => String(n).padStart(6, '0');
 
+  /* ---------------- 时间：统一显示为北京时间（UTC+8） ----------------
+     兼容三种来源：
+       "2026-10-21T15:50:42+08:00"  新数据（带偏移）
+       "2026-10-21 07:50:42 (UTC)"   旧云端数据
+       "2026-10-21 15:12:05"          旧本地数据（按本地时区） */
+  function fmtTime(s) {
+    if (!s) return '';
+    const txt = String(s).trim();
+    let d = null;
+    if (/(Z|[+-]\d{2}:?\d{2})$/.test(txt)) {
+      d = new Date(txt.replace(' ', 'T'));            // 带时区偏移，Date 能正确解析
+    } else {
+      const m = /(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/.exec(txt);
+      if (!m) return txt;
+      if (/\(UTC\)/i.test(txt)) {
+        d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      } else {
+        d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+      }
+    }
+    if (!d || isNaN(d.getTime())) return txt;
+    const p = n => String(n).padStart(2, '0');
+    // 绝对时刻 + 8 小时 = 北京墙上时间（用 UTC 字段取值，与机器时区无关）
+    const cn = new Date(d.getTime() + 8 * 3600000);
+    return `${cn.getUTCFullYear()}-${p(cn.getUTCMonth() + 1)}-${p(cn.getUTCDate())} ` +
+      `${p(cn.getUTCHours())}:${p(cn.getUTCMinutes())}:${p(cn.getUTCSeconds())}（北京时间）`;
+  }
+
   /* ---------------- 工具 ---------------- */
   function windowRecords() {
     return state.range > 0 ? RECS.slice(-state.range) : RECS.slice();
@@ -102,7 +130,7 @@
     const ms = marketState();
     const autoOk = isHttp();
     $('dataMeta').innerHTML =
-      `${rec.date} 收盘 · 基准因子 <b style="color:var(--red)">${rec.factorStr}</b> ${diffHtml} ｜ 共 ${RECS.length} 个交易日（${RECS[0].date} ~ ${RECS[RECS.length - 1].date}）· 来源：${DATA.source} · 更新于 ${DATA.updatedAt}` +
+      `${rec.date} 收盘 · 基准因子 <b style="color:var(--red)">${rec.factorStr}</b> ${diffHtml} ｜ 共 ${RECS.length} 个交易日（${RECS[0].date} ~ ${RECS[RECS.length - 1].date}）· 来源：${DATA.source} · 更新于 ${fmtTime(DATA.updatedAt)}` +
       `<br><span class="state-tag ${ms.open ? 'warn' : 'ok'}">${ms.text}</span>` +
       `<span class="state-tag ${autoOk ? 'ok' : 'warn'}">${autoOk ? '🔄 自动更新已开启（每 45 秒检查）' : '⚠ 本地文件方式打开，自动更新不可用'}</span>` +
       `<span class="state-tag">数据源：${dataSource}</span>`;
@@ -1079,7 +1107,7 @@
           lastStamp = json.updatedAt;
           applyData(json);
           dataSource = json.origin ? `在线接口（${json.origin}）` : '在线接口';
-          toast(`在线数据已更新 · ${json.updatedAt} · 基准因子 ${json.records[json.records.length - 1].factorStr}`);
+          toast(`在线数据已更新 · ${fmtTime(json.updatedAt)} · 基准因子 ${json.records[json.records.length - 1].factorStr}`);
           return;
         }
         if (json && json.records && json.records.length) { dataSource = '在线接口'; renderRuleCard(); return; }
@@ -1094,7 +1122,7 @@
       if (!st.ok || !st.lastUpdated || st.lastUpdated === lastStamp) return;
       lastStamp = st.lastUpdated;
       await reloadData();
-      toast(`数据已更新 · ${st.lastUpdated} · 最新基准因子 ${st.lastFactor}`);
+      toast(`数据已更新 · ${fmtTime(st.lastUpdated)} · 最新基准因子 ${st.lastFactor}`);
     } catch (e) { /* 忽略：轮询失败不影响使用 */ }
   }
 
