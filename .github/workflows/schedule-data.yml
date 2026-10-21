@@ -5,7 +5,7 @@ on:
     # UTC 07:02 / 07:12 = 北京时间 15:02 / 15:12（收盘后抓取定稿价）
     - cron: "2 7 * * *"
     - cron: "12 7 * * *"
-  workflow_dispatch:      # 手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,16 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: 抓取行情并计算基准因子
         run: python3 scripts/fetch_data.py
-
-      - name: 提交更新后的数据
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: 更新基准因子数据"
-          file_pattern: "data/*"
+      - name: 推送到仓库（Contents API）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: python3 scripts/push_data.py
