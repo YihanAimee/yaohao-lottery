@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>访问统计 · 摇号走势图</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">摇</div>
+    <div>
+      <h1>访问统计看板</h1>
+      <p id="rangeTxt">加载中…</p>
+    </div>
+  </div>
+  <div class="seg">
+    <button class="btn" data-days="7">近 7 天</button>
+    <button class="btn active" data-days="14">近 14 天</button>
+    <button class="btn" data-days="30">近 30 天</button>
+    <button class="btn" id="btnRefresh">刷新</button>
+  </div>
+</header>
+
+<main>
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>访问趋势 <span class="tag">按天（北京时间）</span></h2>
+    <canvas id="chart" height="220"></canvas>
+    <div class="legend">
+      <span><i style="background:#3d8bff"></i>访问量 PV</span>
+      <span><i style="background:#21c08b"></i>独立访客 UV</span>
+      <span><i style="background:#ff4d5e"></i>点击次数</span>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>点击最多的元素 <span class="tag">知道大家点了哪里</span></h2>
+      <div class="list" id="elList"></div>
+    </div>
+    <div class="panel">
+      <h2>点击热力图 <span class="tag">颜色越红 = 点得越密</span></h2>
+      <canvas id="heat" height="300"></canvas>
+      <div class="tagline">横轴 = 屏幕从左到右，纵轴 = 从上到下（基于视口相对坐标 0~1）</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>访问来源</h2>
+      <div class="list" id="refList"></div>
+    </div>
+    <div class="panel">
+      <h2>设备与浏览器</h2>
+      <div class="list" id="uaList"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>最近事件 <span class="tag">实时流水</span></h2>
+    <div class="list" id="recent"></div>
+  </div>
+
+  <p class="hint">
+    数据说明：仅记录 IP 的加盐哈希（用于去重统计独立访客，不保存原始 IP），不记录任何表单内容或身份信息。
+    埋点为异步上报，不影响页面加载速度。
+  </p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
