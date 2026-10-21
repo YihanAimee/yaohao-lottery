@@ -25,7 +25,8 @@
     stock: 0,
     bits: 0,          // 0=显示位1+位2，1=仅位1，2=仅位2
     date: RECS[RECS.length - 1].date,
-    picks: []
+    picks: [],
+    pickGroups: null  // {near:[], hot:[]} 生成 Top 号码时的分组来源
   };
 
   const $ = id => document.getElementById(id);
@@ -832,9 +833,14 @@
     rows.sort((a, b) => a.diff - b.diff || b.match - a.match || a.val - b.val);
     const best = rows[0].diff;
 
+    const groups = state.pickGroups;
+    const nearSet = new Set(groups ? groups.near.map(c => c.num) : []);
+    const hotSet = new Set(groups ? groups.hot.map(c => c.num) : []);
+    const hasSrc = nearSet.size + hotSet.size > 0;
+
     const tbl = el('table', 'rank-table');
     tbl.innerHTML = `<thead><tr><th>名次</th><th>我的号码</th><th>距基准因子</th><th>位匹配</th>
-      <th>评级</th><th>区间出现</th></tr></thead>`;
+      <th>评级</th><th>区间出现</th>${hasSrc ? '<th>来源</th>' : ''}</tr></thead>`;
     const tb = el('tbody');
     rows.forEach((r, i) => {
       const tr = el('tr');
@@ -845,33 +851,49 @@
       if (i === 0 && r.diff === best) tr.className = 'gold';
       else if (i === 1 && r.diff === best) tr.className = 'silver';
       else if (i === 2 && r.diff === best) tr.className = 'bronze';
+      const src = !hasSrc ? '' :
+        nearSet.has(r.num) ? '<span class="badge blue">邻域</span>' :
+          hotSet.has(r.num) ? '<span class="badge gold">高频</span>' : '<span class="badge gray">自填</span>';
       tr.innerHTML = `<td>${i + 1}</td><td class="num">${factorSegments({ factorStr: r.num }, true)}</td>
         <td>${r.diff === 0 ? '<b style="color:var(--red)">0</b>' : r.diff}</td>
         <td>${r.match}/6</td><td>${badge}</td>
-        <td>${r.hits ? `<b>${r.hits} 次</b>` : '0 次'}</td>`;
+        <td>${r.hits ? `<b>${r.hits} 次</b>` : '0 次'}</td>${hasSrc ? `<td>${src}</td>` : ''}`;
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
     box.appendChild(tbl);
 
     const top = rows.filter(r => r.diff === best);
+    // 与基准因子绝对距离最近的号码（不受“我填了哪些号码”影响）
+    const nearest = [{ num: rec.factorStr, d: 0 }];
+    for (let d = 1; d <= 3 && nearest.length < 7; d++) {
+      for (const s of [-1, 1]) {
+        const v = factor + d * s;
+        if (v < 0 || v > 999999) continue;
+        nearest.push({ num: pad(v), d });
+      }
+    }
     const note = el('div', 'hint-box');
     note.style.marginTop = '10px';
-    note.innerHTML = `对照 <b>${rec.date}</b> 基准因子 <b style="color:var(--red)">${rec.factorStr}</b>：
-      最接近的是 <b>${top.map(t => t.num).join('、')}</b>，距离 <b style="color:var(--red)">${best}</b>
-      ${best === 0 ? '（完全命中）' : best <= 2 ? '（按平行志愿规则可并列第一）' : ''}。
-      <br>提示：可围绕该距离再微调 ±1 / ±2 / ±5 组成平行志愿数组，提高覆盖率。`;
+    note.innerHTML = `对照 <b>${rec.date}</b> 基准因子 <b style="color:var(--red)">${rec.factorStr}</b>：<br>
+      · <b>与基准因子绝对距离最近的号码</b>：${nearest.map(n => `<b>${n.num}</b>（距离 ${n.d}）`).join('、')}<br>
+      · <b>你填写的 ${rows.length} 个号码中最接近的是</b> <b>${top.map(t => t.num).join('、')}</b>，距离 <b style="color:var(--red)">${best}</b>${best === 0 ? '（完全命中）' : best <= 2 ? '（按平行志愿规则可并列第一）' : ''}<br>
+      ${hasSrc ? `· <b>号码来源</b>：邻域推荐 ${groups.near.map(c => c.num).join('、')}；历史高频 ${groups.hot.map(c => c.num).join('、') || '（区间内无）'}<br>` : ''}
+      提示：可围绕该距离再微调 ±1 / ±2 / ±5 组成平行志愿数组，提高覆盖率。`;
     box.appendChild(note);
   }
 
-  /* Top 概率号码（限定在候选区间内） */
+  /* Top 概率号码：以当日基准因子为锚（邻域优先）＋ 历史高频组合 */
   function fillTopNumbers() {
     const recs = windowRecords();
     const pred = predictNext(recs);
+    const rec = currentRecord();
+    const f = rec.factor;
     const from = parseInt($('rangeFrom').value, 10);
     const to = parseInt($('rangeTo').value, 10);
     const lo = Number.isNaN(from) ? 0 : Math.max(0, Math.min(from, to));
     const hi = Number.isNaN(to) ? 999999 : Math.min(999999, Math.max(from, to));
+    const inRange = v => v >= lo && v <= hi;
 
     // 各位概率查表
     const pmap = pred.digits.map(list => {
@@ -885,23 +907,31 @@
       for (let i = 0; i < 6; i++) p *= pmap[i][Number(s[i])];
       return p;
     };
-    let cands = pred.top.map(t => ({ num: t.num, p: scoreOf(t.num) }));
-    const inRange = cands.filter(c => {
-      const v = parseInt(c.num, 10);
-      return v >= lo && v <= hi;
-    });
-    if (inRange.length < 5) {
-      const list = [];
-      const step = Math.max(1, Math.floor((hi - lo + 1) / 60000));
-      for (let v = lo; v <= hi; v += step) list.push(v);
-      if (list.length > 200000) list.length = 200000;
-      list.forEach(v => cands.push({ num: String(v).padStart(6, '0'), p: scoreOf(v) }));
-      cands.sort((a, b) => b.p - a.p);
-      cands = cands.slice(0, 12);
-    } else {
-      cands = inRange.sort((a, b) => b.p - a.p);
+
+    /* A. 基准因子邻域：离基准因子越近越优先，同距离取概率更高者 */
+    const OFFSETS = [1, 2, 3, 4, 5, 6, 8, 10, 13, 16, 20, 30, 40, 50, 80, 120, 200,
+      350, 500, 800, 1200, 2000, 3500, 5000, 8000, 12000, 20000, 35000, 50000,
+      80000, 120000, 200000, 350000, 500000, 800000];
+    const near = [];
+    for (const d of OFFSETS) {
+      for (const s of [-1, 1]) {
+        const v = f + d * s;
+        if (v < 0 || v > 999999 || !inRange(v)) continue;
+        near.push({ num: pad(v), d, p: scoreOf(v) });
+      }
     }
-    state.picks = cands.map(c => c.num);
+    near.sort((a, b) => a.d - b.d || b.p - a.p);
+    const nearTop = near.slice(0, 10);
+
+    /* B. 历史高频组合（各位频率 + 一阶转移），限定在候选区间内 */
+    const hot = pred.top
+      .map(t => ({ num: t.num, p: t.p, v: parseInt(t.num, 10) }))
+      .filter(t => inRange(t.v))
+      .sort((a, b) => b.p - a.p)
+      .slice(0, 5);
+
+    state.picks = [...nearTop.map(c => c.num), ...hot.map(c => c.num)];
+    state.pickGroups = { near: nearTop, hot };
     $('myNums').value = state.picks.join('\n');
     rankNumbers();
   }
@@ -982,10 +1012,13 @@
     $('dateSel').addEventListener('change', e => { state.date = e.target.value; renderRuleCard(); renderSmart(); rankNumbers(); });
     $('btnRank').addEventListener('click', () => {
       state.picks = $('myNums').value.split(/[\s,，、;；]+/).filter(Boolean);
+      state.pickGroups = null;
       rankNumbers();
     });
     $('btnGenTop').addEventListener('click', fillTopNumbers);
-    $('btnClear').addEventListener('click', () => { $('myNums').value = ''; state.picks = []; rankNumbers(); });
+    $('btnClear').addEventListener('click', () => {
+      $('myNums').value = ''; state.picks = []; state.pickGroups = null; rankNumbers();
+    });
     $('btnExport').addEventListener('click', exportCsv);
     $('btnRule').addEventListener('click', () => $('ruleModal').hidden = false);
     $('btnCloseRule').addEventListener('click', () => $('ruleModal').hidden = true);
