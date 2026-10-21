@@ -1,0 +1,18 @@
+name = "yaohao-lottery"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# 静态资源（页面）
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
+# KV 命名空间：先执行 `npx wrangler kv namespace create FACTOR_KV`，把返回的 id 填到下面
+[[kv_namespaces]]
+binding = "FACTOR_KV"
+id = "b6bae7de0f4b493786ff01c55498bdd4"
+
+# 定时：UTC 07:02 / 07:12 = 北京 15:02 / 15:12
+[triggers]
+crons = ["2 7 * * *", "12 7 * * *"]
