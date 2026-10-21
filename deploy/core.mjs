@@ -12,6 +12,12 @@ export const STOCKS = [
 const BEGIN = "20260701";
 const END = "20261031";
 
+/** 当前时间（北京时间 UTC+8），带时区偏移，避免显示歧义 */
+export function bjStamp(d = new Date()) {
+  // 绝对时刻 + 8 小时 = 北京墙上时间；再按 UTC 字段取，避免受运行机器时区影响
+  return new Date(d.getTime() + 8 * 3600000).toISOString().slice(0, 19) + "+08:00";
+}
+
 /** 角分互换：20.12 -> 21，27.57 -> 75，8.27 -> 72（十位=分，个位=角） */
 export function jiaoFen(price) {
   const fen = Math.round((price - Math.floor(price)) * 100);
@@ -141,7 +147,7 @@ export async function collect(fetcher = fetch) {
     if (r.factorStr !== expect) throw new Error("位序校验失败 " + r.date);
   }
   return {
-    updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19) + " (UTC)",
+    updatedAt: bjStamp(),
     source:
       "日K（不复权）· " +
       Object.keys(sources)
