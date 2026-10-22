@@ -9,6 +9,7 @@ import { collect, pushToGitHub } from "./core.mjs";
 
 const KV_KEY = "factor:current";
 const KV_STATUS = "factor:status";
+const KV_PUSH = "factor:lastPush";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -36,7 +37,14 @@ async function saveStatus(env, obj) {
   }
 }
 
-async function refresh(env) {
+/** 北京时间（UTC+8）的小时与分钟 */
+function bjHM(d = new Date()) {
+  const t = new Date(d.getTime() + 8 * 3600000);
+  return { h: t.getUTCHours(), m: t.getUTCMinutes() };
+}
+
+async function refresh(env, opts = {}) {
+  const push = opts.push !== false;
   try {
     const data = await collect();
     if (env && env.FACTOR_KV) {
@@ -44,10 +52,17 @@ async function refresh(env) {
     }
     const last = data.records[data.records.length - 1];
     let pushed = null;
-    try {
-      pushed = await pushToGitHub(env, data);
-    } catch (e) {
-      pushed = { ok: false, error: String(e && e.message ? e.message : e) };
+    if (push) {
+      try {
+        pushed = await pushToGitHub(env, data);
+        if (pushed && pushed.ok && env && env.FACTOR_KV) {
+          await env.FACTOR_KV.put(KV_PUSH, String(Date.now()), { expirationTtl: 60 * 60 * 24 * 30 });
+        }
+      } catch (e) {
+        pushed = { ok: false, error: String(e && e.message ? e.message : e) };
+      }
+    } else {
+      pushed = { ok: true, skipped: true, reason: "盘中只写 KV，不推送 GitHub" };
     }
     const r = { ok: true, records: data.records.length, lastFactor: last.factorStr, updatedAt: data.updatedAt, source: data.source, pushed };
     await saveStatus(env, r);
@@ -112,6 +127,17 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(refresh(env));
+    const cron = String((event && event.cron) || "");
+    const { h, m } = bjHM();
+    // 收盘（北京时间 15:00）之后才推送 GitHub 定稿；盘中只写 KV 供实时接口读取
+    const afterClose = h > 15 || (h === 15 && m >= 0);
+    const isDedup = /^\*\/\d+ /.test(cron);
+    // 每分钟任务：收盘后每小时推送一次（配合内容比对，仓库不会被刷屏）
+    let push = afterClose;
+    if (isDedup && afterClose) {
+      const lastPush = Number((env && env.FACTOR_KV) ? await env.FACTOR_KV.get(KV_PUSH, "text") || 0 : 0);
+      push = Date.now() - lastPush > 30 * 60 * 1000;
+    }
+    ctx.waitUntil(refresh(env, { push }));
   },
 };
