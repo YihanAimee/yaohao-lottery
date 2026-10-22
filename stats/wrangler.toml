@@ -6,3 +6,9 @@ compatibility_date = "2024-11-01"
 binding = "STATS_DB"
 database_name = "yaohao-stats"
 database_id = "4b483c87-53ef-4c14-b07c-0b27ce48e7f9"
+
+# Same KV namespace as the Worker: Worker writes live data every minute, Pages reads and serves it
+# (pages.dev works in China; workers.dev is DNS-poisoned, so the live API lives here)
+[[kv_namespaces]]
+binding = "FACTOR_KV"
+id = "b6bae7de0f4b493786ff01c55498bdd4"
