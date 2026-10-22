@@ -147,7 +147,7 @@
     $('dataMeta').innerHTML =
       `${rec.date} 收盘 · 基准因子 <b style="color:var(--red)">${rec.factorStr}</b> ${diffHtml} ｜ 共 ${RECS.length} 个交易日（${RECS[0].date} ~ ${RECS[RECS.length - 1].date}）· 来源：${DATA.source} · 更新于 ${fmtTime(DATA.updatedAt)}` +
       `<br><span class="state-tag ${ms.open ? 'warn' : 'ok'}">${ms.text}</span>` +
-      `<span class="state-tag ${autoOk ? 'ok' : 'warn'}">${autoOk ? '🔄 自动更新已开启（每 45 秒检查）' : '⚠ 本地文件方式打开，自动更新不可用'}</span>` +
+      `<span class="state-tag ${autoOk ? 'ok' : 'warn'}">${autoOk ? '🔄 自动更新已开启（每 30 秒检查 · 云端每分钟抓取）' : '⚠ 本地文件方式打开，自动更新不可用'}</span>` +
       `<span class="state-tag">数据源：${dataSource}</span>`;
 
     // 自检：角分互换与价格是否一致
@@ -1095,41 +1095,59 @@
     init();
   }
 
-  /* 尝试在线接口：同源 api/factor（Cloudflare Worker / 自建 API 都走这个路径） */
+  /* 实时数据源（按优先级尝试）
+     1) 同源 api/factor —— 站点与 Worker 同域部署时可用
+     2) pages.dev 实时接口 —— 读 Worker 每分钟写入的 KV，国内可达
+     3) data/status.json —— Pages 快照 / 本地定时任务产物（兜底） */
+  const REMOTE_APIS = [
+    { url: 'api/factor', label: '在线接口' },
+    { url: 'https://yaohao-stats.pages.dev/api/factor', label: '实时接口' },
+  ];
+
+  async function fetchLive() {
+    for (const api of REMOTE_APIS) {
+      try {
+        const res = await fetch(api.url + '?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) continue;
+        const json = await res.json();
+        if (json && json.records && json.records.length) {
+          return { json, source: json.origin ? `${api.label}（${json.origin}）` : api.label };
+        }
+      } catch (e) { /* 试下一个源 */ }
+    }
+    return null;
+  }
+
+  /* 尝试在线接口 */
   async function tryRemote() {
     if (!isHttp()) return false;
-    try {
-      const res = await fetch('api/factor?t=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) return false;
-      const json = await res.json();
-      if (!json || !json.records || !json.records.length) return false;
-      lastStamp = json.updatedAt;
-      applyData(json);
-      dataSource = json.origin ? `在线接口（${json.origin}）` : '在线接口';
-      renderRuleCard();
-      return true;
-    } catch (e) { return false; }
+    const r = await fetchLive();
+    if (!r) return false;
+    lastStamp = r.json.updatedAt;
+    applyData(r.json);
+    dataSource = r.source;
+    renderRuleCard();
+    return true;
   }
 
   async function pollStatus() {
     if (!isHttp()) return;                       // file:// 下无法 fetch，静默跳过
-    // 1) 在线接口
-    try {
-      const res = await fetch('api/factor?t=' + Date.now(), { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.records && json.records.length && json.updatedAt !== lastStamp) {
-          lastStamp = json.updatedAt;
-          applyData(json);
-          dataSource = json.origin ? `在线接口（${json.origin}）` : '在线接口';
-          toast(`在线数据已更新 · ${fmtTime(json.updatedAt)} · 基准因子 ${json.records[json.records.length - 1].factorStr}`);
-          return;
-        }
-        if (json && json.records && json.records.length) { dataSource = '在线接口'; renderRuleCard(); return; }
+    // 1) 实时接口
+    const live = await fetchLive();
+    if (live) {
+      if (live.json.updatedAt !== lastStamp) {
+        lastStamp = live.json.updatedAt;
+        applyData(live.json);
+        dataSource = live.source;
+        toast(`数据已更新 · ${fmtTime(live.json.updatedAt)} · 基准因子 ${live.json.records[live.json.records.length - 1].factorStr}`);
+      } else {
+        dataSource = live.source;
+        renderRuleCard();
       }
-    } catch (e) { /* 无在线接口，继续本地 */ }
+      return;
+    }
 
-    // 2) 本地 status.json（本地定时任务模式）
+    // 2) 本地 / Pages 快照 status.json（兜底）
     try {
       const res = await fetch('data/status.json?t=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) return;
@@ -1196,6 +1214,6 @@
   if (isHttp()) {
     tryRemote().then(ok => { if (ok) toast('已切换到在线数据源'); });
     setTimeout(pollStatus, 3000);
-    setInterval(pollStatus, 45000);
+    setInterval(pollStatus, 30000);
   }
 })();
