@@ -96,6 +96,73 @@ export async function fetchKlineSina(symbol, fetcher = fetch) {
   return { code: symbol, name: symbol, rows: kept };
 }
 
+/** 实时价（盘中）：东财 push2 → 新浪 hq → 腾讯 qt，三源容错 */
+export async function fetchSpot(s, fetcher = fetch) {
+  const symbol = (s.code.startsWith("6") ? "sh" : "sz") + s.code;
+  const UA = { "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/125 Safari/537.36" };
+  const errs = [];
+
+  // 1) 东财 push2 实时
+  try {
+    const url = "https://push2.eastmoney.com/api/qt/stock/get?secid=" + s.secid + "&fields=f43,f57,f58,f60,f170";
+    const res = await fetcher(url, { headers: { ...UA, Referer: "https://quote.eastmoney.com/" } });
+    if (!res.ok) throw new Error("http " + res.status);
+    const j = await res.json();
+    const d = j && j.data;
+    if (!d || !d.f43) throw new Error("empty");
+    const price = Math.round((d.f43 / 100) * 100) / 100;
+    const prev = d.f60 ? Math.round((d.f60 / 100) * 100) / 100 : 0;
+    return { name: s.name, code: s.code, price, prev, pct: d.f170 ? d.f170 / 100 : 0, src: "东财实时" };
+  } catch (e) { errs.push("东财实时 " + (e && e.message)); }
+
+  // 2) 新浪实时
+  try {
+    const res = await fetcher("https://hq.sinajs.cn/list=" + symbol, {
+      headers: { ...UA, Referer: "https://finance.sina.com.cn/" },
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const txt = await res.text();
+    const body = /="([^"]*)"/.exec(txt);
+    if (!body || !body[1]) throw new Error("empty");
+    const f = body[1].split(",");
+    const price = Math.round(Number(f[3]) * 100) / 100;
+    const prev = Math.round(Number(f[2]) * 100) / 100;
+    if (!price) throw new Error("no price");
+    return {
+      name: s.name, code: s.code, price, prev,
+      pct: prev ? Math.round(((price - prev) / prev) * 10000) / 100 : 0,
+      src: "新浪实时",
+    };
+  } catch (e) { errs.push("新浪实时 " + (e && e.message)); }
+
+  // 3) 腾讯实时
+  try {
+    const res = await fetcher("https://qt.gtimg.cn/q=" + symbol, {
+      headers: { ...UA, Referer: "https://gu.qq.com/" },
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const txt = await res.text();
+    const body = /="([^"]*)"/.exec(txt);
+    if (!body || !body[1]) throw new Error("empty");
+    const f = body[1].split("~");
+    const price = Math.round(Number(f[3]) * 100) / 100;
+    const prev = Math.round(Number(f[4]) * 100) / 100;
+    if (!price) throw new Error("no price");
+    return {
+      name: s.name, code: s.code, price, prev,
+      pct: f[32] ? Number(f[32]) : (prev ? Math.round(((price - prev) / prev) * 10000) / 100 : 0),
+      src: "腾讯实时",
+    };
+  } catch (e) { errs.push("腾讯实时 " + (e && e.message)); }
+
+  throw new Error(s.name + " 实时价全部失败: " + errs.join("; "));
+}
+
+/** 北京时间日期 YYYY-MM-DD */
+function bjToday(d = new Date()) {
+  return new Date(d.getTime() + 8 * 3600000).toISOString().slice(0, 10);
+}
+
 /** 抓三只股票并计算基准因子（东财为主源，新浪为备源） */
 export async function collect(fetcher = fetch) {
   const series = {};
@@ -146,6 +213,35 @@ export async function collect(fetcher = fetch) {
     const expect = names.map((n) => `${r.fen[n]}${r.jiao[n]}`).join("");
     if (r.factorStr !== expect) throw new Error("位序校验失败 " + r.date);
   }
+
+  // 盘中：日K 尚未包含今天时，用实时价合成今天的记录（因子随行情跳动）
+  const today = bjToday();
+  const hasToday = records.some((r) => r.date === today);
+  let intraday = null;
+  if (!hasToday) {
+    try {
+      const spots = await Promise.all(STOCKS.map((s) => fetchSpot(s, fetcher)));
+      const closes = spots.map((sp) => Math.round(sp.price * 100) / 100);
+      const splits = closes.map((c) => jiaoFen(c));
+      const factorStr = splits.map((s) => String(s.value).padStart(2, "0")).join("");
+      const payload = { date: today, closes: {}, jiao: {}, fen: {}, jiaoFen: {}, pct: {} };
+      spots.forEach((sp, i) => {
+        payload.closes[sp.name] = closes[i];
+        payload.jiao[sp.name] = splits[i].jiao;
+        payload.fen[sp.name] = splits[i].fen;
+        payload.jiaoFen[sp.name] = splits[i].value;
+        payload.pct[sp.name] = sp.pct;
+      });
+      payload.factor = parseInt(factorStr, 10);
+      payload.factorStr = factorStr;
+      payload.intraday = true;              // 标记：这是盘中实时价，非收盘定稿
+      records.push(payload);
+      intraday = spots.map((sp) => sp.name + "=" + sp.price + "(" + sp.src + ")").join("、");
+    } catch (e) {
+      errors.push("实时价失败: " + (e && e.message ? e.message : e));
+    }
+  }
+
   return {
     updatedAt: bjStamp(),
     source:
@@ -153,9 +249,11 @@ export async function collect(fetcher = fetch) {
       Object.keys(sources)
         .map((n) => n + "=" + sources[n])
         .join("、") +
+      (intraday ? " · 今日盘中实时价 " + intraday : "") +
       " · Cloudflare Worker",
     stocks: STOCKS.map((s) => ({ code: s.code, name: s.name })),
     records,
+    errors,
   };
 }
 
