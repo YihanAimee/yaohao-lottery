@@ -160,7 +160,14 @@ export async function collect(fetcher = fetch) {
 }
 
 
-/** 推送到 GitHub（Contents API 覆盖写，与 GitHub Actions 并发安全） */
+/** 数据的“实质内容”指纹：只取日期/因子/收盘价，用于判断是否真的有新数据 */
+export function dataFingerprint(payload) {
+  const recs = (payload && payload.records) || [];
+  return JSON.stringify(recs.map((r) => [r.date, r.factorStr, r.closes]));
+}
+
+/** 推送到 GitHub（Contents API 覆盖写，与 GitHub Actions 并发安全）
+ *  若远端数据与本次实质内容一致则跳过提交（避免高频抓取刷屏仓库） */
 export async function pushToGitHub(env, payload) {
   const token = env && env.GITHUB_TOKEN;
   const repo = (env && env.GITHUB_REPO) || "YihanAimee/yaohao-lottery";
@@ -179,27 +186,36 @@ export async function pushToGitHub(env, payload) {
     }, null, 1) + "\n",
   };
   const b64 = (s) => btoa(unescape(encodeURIComponent(s)));
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "yaohao-worker",
+  };
   for (const path of Object.keys(files)) {
     const url = "https://api.github.com/repos/" + repo + "/contents/" + path;
     let sha = null;
-    const cur = await fetch(url, {
-      headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "User-Agent": "yaohao-worker" },
-    });
+    const cur = await fetch(url, { headers });
     if (cur.ok) {
       const j = await cur.json();
       sha = j.sha;
+      // 实质内容未变化 → 整体跳过提交
+      if (path === "data/factors.json" && j.content) {
+        try {
+          const bin = atob(String(j.content).replace(/\s/g, ""));
+          const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          const remote = JSON.parse(new TextDecoder().decode(bytes));
+          if (dataFingerprint(remote) === dataFingerprint(payload)) {
+            return { ok: true, skipped: true, repo, reason: "数据无实质变化，未产生提交" };
+          }
+        } catch (e) { /* 解析失败则照常提交 */ }
+      }
     }
     const body = { message: "chore: 更新基准因子数据 (Cloudflare Worker)", content: b64(files[path]), branch: "main" };
     if (sha) body.sha = sha;
     const res = await fetch(url, {
       method: "PUT",
-      headers: {
-        Authorization: "Bearer " + token,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-        "User-Agent": "yaohao-worker",
-      },
+      headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
