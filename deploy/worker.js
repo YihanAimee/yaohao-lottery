@@ -62,7 +62,7 @@ async function refresh(env, opts = {}) {
         pushed = { ok: false, error: String(e && e.message ? e.message : e) };
       }
     } else {
-      pushed = { ok: true, skipped: true, reason: "盘中只写 KV，不推送 GitHub" };
+      pushed = { ok: true, skipped: true, reason: "盘中（15:00 收盘前）仅写 KV，不推送 GitHub" };
     }
     const r = { ok: true, records: data.records.length, lastFactor: last.factorStr, updatedAt: data.updatedAt, source: data.source, pushed };
     await saveStatus(env, r);
@@ -127,17 +127,9 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    const cron = String((event && event.cron) || "");
     const { h, m } = bjHM();
     // 收盘（北京时间 15:00）之后才推送 GitHub 定稿；盘中只写 KV 供实时接口读取
     const afterClose = h > 15 || (h === 15 && m >= 0);
-    const isDedup = /^\*\/\d+ /.test(cron);
-    // 每分钟任务：收盘后每小时推送一次（配合内容比对，仓库不会被刷屏）
-    let push = afterClose;
-    if (isDedup && afterClose) {
-      const lastPush = Number((env && env.FACTOR_KV) ? await env.FACTOR_KV.get(KV_PUSH, "text") || 0 : 0);
-      push = Date.now() - lastPush > 30 * 60 * 1000;
-    }
-    ctx.waitUntil(refresh(env, { push }));
+    ctx.waitUntil(refresh(env, { push: afterClose }));
   },
 };
