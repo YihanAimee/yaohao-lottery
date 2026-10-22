@@ -1100,8 +1100,8 @@
      2) pages.dev 实时接口 —— 读 Worker 每分钟写入的 KV，国内可达
      3) data/status.json —— Pages 快照 / 本地定时任务产物（兜底） */
   const REMOTE_APIS = [
-    { url: 'api/factor', label: '在线接口' },
     { url: 'https://yaohao-stats.pages.dev/api/factor', label: '实时接口' },
+    { url: 'api/factor', label: '在线接口' },
   ];
 
   async function fetchLive() {
