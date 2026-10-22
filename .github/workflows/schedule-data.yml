@@ -3,6 +3,7 @@ name: 更新基准因子数据
 on:
   schedule:
     # UTC 07:02 / 07:12 = 北京时间 15:02 / 15:12（收盘后抓取定稿价）
+    # 与 Cloudflare Worker 同步运行；push_data.py 已内置 409 并发重试，冲突自动化解
     - cron: "2 7 * * *"
     - cron: "12 7 * * *"
   workflow_dispatch:
