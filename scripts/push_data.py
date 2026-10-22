@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """把 data/ 下的数据文件推送到 GitHub（Contents API 覆盖写，可与 Actions 并发）。"""
-import base64, json, os, subprocess, sys, urllib.request, urllib.error
+import base64, json, os, subprocess, sys, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 API = "https://api.github.com"
@@ -65,16 +65,26 @@ def main():
         if not os.path.exists(src):
             print("跳过:", rel); continue
         content = base64.b64encode(open(src, "rb").read()).decode()
-        sha = None
-        try:
-            sha = api("/repos/%s/contents/%s" % (REPO, rel)).get("sha")
-        except RuntimeError:
-            pass
-        payload = {"message": "chore: 更新基准因子数据 " + os.path.basename(src), "content": content, "branch": "main"}
-        if sha:
-            payload["sha"] = sha
-        api("/repos/%s/contents/%s" % (REPO, rel), "PUT", payload)
-        print("已推送:", rel)
+        for attempt in (1, 2, 3):
+            sha = None
+            try:
+                sha = api("/repos/%s/contents/%s" % (REPO, rel)).get("sha")
+            except Exception:
+                pass
+            payload = {"message": "chore: 更新基准因子数据 " + os.path.basename(src), "content": content, "branch": "main"}
+            if sha:
+                payload["sha"] = sha
+            try:
+                api("/repos/%s/contents/%s" % (REPO, rel), "PUT", payload)
+                print("已推送:", rel)
+                break
+            except RuntimeError as e:
+                # 与其它推送方并发写入导致 sha 过期时，重新取 sha 再试
+                if attempt < 3 and "409" in str(e):
+                    print("  并发冲突，重试 %d…" % (attempt + 1), file=sys.stderr)
+                    time.sleep(2 * attempt)
+                    continue
+                raise
 
 
 if __name__ == "__main__":
