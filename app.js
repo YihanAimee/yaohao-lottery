@@ -82,23 +82,38 @@
     return e;
   }
 
-  /* 北京时间（A股 15:00 收盘） */
-  function beijingNow() {
-    const d = new Date();
-    return new Date(d.getTime() + (d.getTimezoneOffset() + 480) * 60000);
+  /* 北京时间（A股 15:00 收盘）
+     注意：不能依赖运行机器的时区，统一按 UTC+8 计算并用 UTC 字段读取 */
+  function bjNow() {
+    const d = new Date(Date.now() + 8 * 3600000);
+    const p = n => String(n).padStart(2, '0');
+    return {
+      date: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`,
+      hours: d.getUTCHours(),
+      minutes: d.getUTCMinutes(),
+      weekday: d.getUTCDay(),
+      hm: p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()),
+    };
   }
   function marketState() {
-    const bj = beijingNow();
-    const today = `${bj.getFullYear()}-${String(bj.getMonth() + 1).padStart(2, '0')}-${String(bj.getDate()).padStart(2, '0')}`;
+    const bj = bjNow();
     const last = RECS[RECS.length - 1];
-    const afterClose = bj.getHours() >= 15;
-    if (last.date === today && !afterClose) {
-      return { open: true, text: `⚠ 盘中数据（${String(bj.getHours()).padStart(2, '0')}:${String(bj.getMinutes()).padStart(2, '0')}）· 基准因子须以 15:00 收盘价定稿，收盘后请更新数据` };
+    const isWeekend = bj.weekday === 0 || bj.weekday === 6;
+    const afterClose = bj.hours >= 15;
+
+    if (last.date === bj.date) {
+      return afterClose
+        ? { open: false, text: '✓ 15:00 收盘后数据（已定稿）' }
+        : { open: true, text: `⚠ 盘中数据（${bj.hm}）· 基准因子须以 15:00 收盘价定稿，收盘后会自动刷新` };
     }
-    if (last.date === today) {
-      return { open: false, text: '✓ 15:00 收盘后数据（已定稿）' };
+    // 今天还没有数据
+    if (!afterClose) {
+      return { open: true, text: `⏳ 今日（${bj.date}）尚未收盘，15:02 自动更新${isWeekend ? '（今日休市，将显示上一交易日）' : ''}` };
     }
-    return { open: false, text: `最新可用：${last.date}（当日为休市或尚未开盘）` };
+    if (isWeekend) {
+      return { open: false, text: `最新可用：${last.date}（今日休市）` };
+    }
+    return { open: true, text: `⚠ 今日（${bj.date}）数据尚未生成 · 定时任务 15:02 执行，15:12 兜底重试` };
   }
 
   /* ---------------- 顶部规则卡 ---------------- */
