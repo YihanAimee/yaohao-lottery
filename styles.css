@@ -68,7 +68,7 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
   opacity: 0; transform: translateY(10px); transition: .25s ease; pointer-events: none;
 }
 .toast-msg.show { opacity: 1; transform: none; }
-.topbar-actions { display: flex; gap: 8px; }
+.topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 .btn {
   border: 1px solid var(--line);
