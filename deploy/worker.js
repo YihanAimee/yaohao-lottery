@@ -130,6 +130,7 @@ export default {
     const { h, m } = bjHM();
     // 收盘（北京时间 15:00）之后才推送 GitHub 定稿；盘中只写 KV 供实时接口读取
     const afterClose = h > 15 || (h === 15 && m >= 0);
+    console.log(`[cron] ${(event && event.cron) || "?"} fired at BJ ${h}:${String(m).padStart(2, "0")} push=${afterClose}`);
     ctx.waitUntil(refresh(env, { push: afterClose }));
   },
 };
