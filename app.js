@@ -25,6 +25,7 @@
     stock: 0,
     bits: 0,          // 0=显示位1+位2，1=仅位1，2=仅位2
     date: RECS[RECS.length - 1].date,
+    dateTouched: false, // 用户手动选过日期后，不再自动跟随最新一期
     picks: [],
     pickGroups: null  // {near:[], hot:[]} 生成 Top 号码时的分组来源
   };
@@ -1052,7 +1053,11 @@
       state.range = parseInt(e.target.value, 10);
       renderChart(); renderDist(); renderTrend(); renderTable(); renderSmart();
     });
-    $('dateSel').addEventListener('change', e => { state.date = e.target.value; renderRuleCard(); renderSmart(); rankNumbers(); });
+    $('dateSel').addEventListener('change', e => {
+      state.date = e.target.value;
+      state.dateTouched = true;          // 用户手动选择后不再自动跟随最新
+      renderRuleCard(); renderSmart(); rankNumbers();
+    });
     $('btnRank').addEventListener('click', () => {
       state.picks = $('myNums').value.split(/[\s,，、;；]+/).filter(Boolean);
       state.pickGroups = null;
@@ -1091,7 +1096,10 @@
   function applyData(json) {
     DATA.records = json.records; DATA.updatedAt = json.updatedAt; DATA.source = json.source;
     RECS.length = 0; json.records.forEach(r => RECS.push(r));
-    if (!RECS.some(r => r.date === state.date)) state.date = RECS[RECS.length - 1].date;
+    // 未手动选过日期时，自动跟随最新一期（否则顶部大数字停留在旧日期）
+    if (!state.dateTouched || !RECS.some(r => r.date === state.date)) {
+      state.date = RECS[RECS.length - 1].date;
+    }
     init();
   }
 
@@ -1198,6 +1206,7 @@
       sel.appendChild(o);
     });
     if (!RECS.some(r => r.date === state.date)) state.date = RECS[RECS.length - 1].date;
+    if (!state.dateTouched) state.date = RECS[RECS.length - 1].date;
     sel.value = state.date;
     renderRuleCard();
     renderChart();
