@@ -1,0 +1,324 @@
+/**
+ * 摇号走势图 · 云端数据核心（Cloudflare Workers / Node 均可运行）
+ * 规则：收盘价小数点后两位颠倒 → 角分互换（十位=分，个位=角），三只股票拼成 6 位基准因子。
+ */
+
+export const STOCKS = [
+  { code: "600690", name: "海尔智家", secid: "1.600690" },
+  { code: "688139", name: "海尔生物", secid: "1.688139" },
+  { code: "300143", name: "盈康生命", secid: "0.300143" },
+];
+
+const BEGIN = "20260701";
+const END = "20261031";
+
+/** 当前时间（北京时间 UTC+8），带时区偏移，避免显示歧义 */
+export function bjStamp(d = new Date()) {
+  // 绝对时刻 + 8 小时 = 北京墙上时间；再按 UTC 字段取，避免受运行机器时区影响
+  return new Date(d.getTime() + 8 * 3600000).toISOString().slice(0, 19) + "+08:00";
+}
+
+/** 角分互换：20.12 -> 21，27.57 -> 75，8.27 -> 72（十位=分，个位=角） */
+export function jiaoFen(price) {
+  const fen = Math.round((price - Math.floor(price)) * 100);
+  const jiao = Math.floor(fen / 10);
+  const fenGe = fen % 10;
+  return { jiao, fen: fenGe, value: fenGe * 10 + jiao };
+}
+
+/** 拉取单只股票日K（不复权） */
+export async function fetchKline(secid, fetcher = fetch) {
+  const url =
+    "https://push2his.eastmoney.com/api/qt/stock/kline/get?" +
+    `secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61` +
+    `&klt=101&fqt=0&beg=${BEGIN}&end=${END}`;
+  const res = await fetcher(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/125 Safari/537.36", Referer: "https://quote.eastmoney.com/" },
+  });
+  if (!res.ok) throw new Error("eastmoney http " + res.status);
+  const json = await res.json();
+  const d = json && json.data;
+  if (!d || !d.klines) throw new Error("eastmoney empty data for " + secid);
+  return {
+    code: d.code,
+    name: d.name,
+    rows: d.klines.map((k) => {
+      const p = k.split(",");
+      return {
+        date: p[0], open: +p[1], close: +p[2], high: +p[3], low: +p[4],
+        volume: +p[5], amount: +p[6], amplitude: +p[7], pct: +p[8],
+        change: +p[9], turnover: +p[10],
+      };
+    }),
+  };
+}
+
+/** 备用数据源：新浪财经日K（symbol 形如 sh600690） */
+export async function fetchKlineSina(symbol, fetcher = fetch) {
+  const url =
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/" +
+    `CN_MarketData.getKLineData?symbol=${symbol}&scale=240&ma=no&datalen=200`;
+  const res = await fetcher(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/125 Safari/537.36", Referer: "https://finance.sina.com.cn/" },
+  });
+  if (!res.ok) throw new Error("sina http " + res.status);
+  const txt = await res.text();
+  const rows = [];
+  const blobs = txt.match(/\{[^{}]*\}/g) || [];
+  const pick = (blob, key) => {
+    const m = new RegExp('"' + key + '"\\s*:\\s*"?([\\d.]+)"?').exec(blob);
+    return m ? Number(m[1]) : 0;
+  };
+  for (const blob of blobs) {
+    const d = /"day"\s*:\s*"([\d-]+)"/.exec(blob);
+    if (!d) continue;
+    const close = pick(blob, "close");
+    if (!close) continue;
+    rows.push({
+      date: d[1],
+      open: pick(blob, "open"),
+      close,
+      high: pick(blob, "high"),
+      low: pick(blob, "low"),
+      volume: pick(blob, "volume"),
+    });
+  }
+  if (!rows.length) throw new Error("sina empty data for " + symbol);
+  // 补齐涨跌幅（新浪不返回）
+  rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+  for (let i = 0; i < rows.length; i++) {
+    const prev = i > 0 ? rows[i - 1].close : 0;
+    rows[i].pct = prev ? +(((rows[i].close - prev) / prev) * 100).toFixed(2) : 0;
+  }
+  // 与东财主源口径对齐：只保留 BEGIN 之后的交易日
+  const kept = rows.filter((r) => r.date.replace(/-/g, "") >= BEGIN);
+  if (!kept.length) throw new Error("sina no rows after " + BEGIN);
+  return { code: symbol, name: symbol, rows: kept };
+}
+
+/** 实时价（盘中）：东财 push2 → 新浪 hq → 腾讯 qt，三源容错 */
+export async function fetchSpot(s, fetcher = fetch) {
+  const symbol = (s.code.startsWith("6") ? "sh" : "sz") + s.code;
+  const UA = { "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/125 Safari/537.36" };
+  const errs = [];
+
+  // 1) 东财 push2 实时
+  try {
+    const url = "https://push2.eastmoney.com/api/qt/stock/get?secid=" + s.secid + "&fields=f43,f57,f58,f60,f170";
+    const res = await fetcher(url, { headers: { ...UA, Referer: "https://quote.eastmoney.com/" } });
+    if (!res.ok) throw new Error("http " + res.status);
+    const j = await res.json();
+    const d = j && j.data;
+    if (!d || !d.f43) throw new Error("empty");
+    const price = Math.round((d.f43 / 100) * 100) / 100;
+    const prev = d.f60 ? Math.round((d.f60 / 100) * 100) / 100 : 0;
+    return { name: s.name, code: s.code, price, prev, pct: d.f170 ? d.f170 / 100 : 0, src: "东财实时" };
+  } catch (e) { errs.push("东财实时 " + (e && e.message)); }
+
+  // 2) 新浪实时
+  try {
+    const res = await fetcher("https://hq.sinajs.cn/list=" + symbol, {
+      headers: { ...UA, Referer: "https://finance.sina.com.cn/" },
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const txt = await res.text();
+    const body = /="([^"]*)"/.exec(txt);
+    if (!body || !body[1]) throw new Error("empty");
+    const f = body[1].split(",");
+    const price = Math.round(Number(f[3]) * 100) / 100;
+    const prev = Math.round(Number(f[2]) * 100) / 100;
+    if (!price) throw new Error("no price");
+    return {
+      name: s.name, code: s.code, price, prev,
+      pct: prev ? Math.round(((price - prev) / prev) * 10000) / 100 : 0,
+      src: "新浪实时",
+    };
+  } catch (e) { errs.push("新浪实时 " + (e && e.message)); }
+
+  // 3) 腾讯实时
+  try {
+    const res = await fetcher("https://qt.gtimg.cn/q=" + symbol, {
+      headers: { ...UA, Referer: "https://gu.qq.com/" },
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const txt = await res.text();
+    const body = /="([^"]*)"/.exec(txt);
+    if (!body || !body[1]) throw new Error("empty");
+    const f = body[1].split("~");
+    const price = Math.round(Number(f[3]) * 100) / 100;
+    const prev = Math.round(Number(f[4]) * 100) / 100;
+    if (!price) throw new Error("no price");
+    return {
+      name: s.name, code: s.code, price, prev,
+      pct: f[32] ? Number(f[32]) : (prev ? Math.round(((price - prev) / prev) * 10000) / 100 : 0),
+      src: "腾讯实时",
+    };
+  } catch (e) { errs.push("腾讯实时 " + (e && e.message)); }
+
+  throw new Error(s.name + " 实时价全部失败: " + errs.join("; "));
+}
+
+/** 北京时间日期 YYYY-MM-DD */
+function bjToday(d = new Date()) {
+  return new Date(d.getTime() + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+/** 抓三只股票并计算基准因子（东财为主源，新浪为备源） */
+export async function collect(fetcher = fetch) {
+  const series = {};
+  const sources = {};
+  const errors = [];
+  for (const s of STOCKS) {
+    const symbol = (s.code.startsWith("6") ? "sh" : "sz") + s.code;
+    let got = null;
+    try {
+      got = await fetchKline(s.secid, fetcher);
+      sources[s.name] = "东方财富";
+    } catch (e) {
+      errors.push(s.name + " 东财失败: " + (e && e.message ? e.message : e));
+      got = await fetchKlineSina(symbol, fetcher);
+      sources[s.name] = "新浪财经";
+    }
+    series[s.name] = got;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  const names = STOCKS.map((s) => s.name);
+  const byDate = {};
+  for (const name of names) {
+    for (const r of series[name].rows) {
+      (byDate[r.date] = byDate[r.date] || {})[name] = r;
+    }
+  }
+  const records = [];
+  for (const date of Object.keys(byDate).sort()) {
+    const rec = byDate[date];
+    if (names.some((n) => !rec[n])) continue;
+    const closes = names.map((n) => Math.round(rec[n].close * 100) / 100);
+    const splits = closes.map((c) => jiaoFen(c));
+    const factorStr = splits.map((s) => String(s.value).padStart(2, "0")).join("");
+    const payload = { date, closes: {}, jiao: {}, fen: {}, jiaoFen: {}, pct: {} };
+    names.forEach((n, i) => {
+      payload.closes[n] = closes[i];
+      payload.jiao[n] = splits[i].jiao;
+      payload.fen[n] = splits[i].fen;
+      payload.jiaoFen[n] = splits[i].value;
+      payload.pct[n] = rec[n].pct;
+    });
+    payload.factor = parseInt(factorStr, 10);
+    payload.factorStr = factorStr;
+    records.push(payload);
+  }
+  // 位序自检：必须是「分·角」拼接
+  for (const r of records) {
+    const expect = names.map((n) => `${r.fen[n]}${r.jiao[n]}`).join("");
+    if (r.factorStr !== expect) throw new Error("位序校验失败 " + r.date);
+  }
+
+  // 盘中：日K 尚未包含今天时，用实时价合成今天的记录（因子随行情跳动）
+  const today = bjToday();
+  const hasToday = records.some((r) => r.date === today);
+  let intraday = null;
+  if (!hasToday) {
+    try {
+      const spots = await Promise.all(STOCKS.map((s) => fetchSpot(s, fetcher)));
+      const closes = spots.map((sp) => Math.round(sp.price * 100) / 100);
+      const splits = closes.map((c) => jiaoFen(c));
+      const factorStr = splits.map((s) => String(s.value).padStart(2, "0")).join("");
+      const payload = { date: today, closes: {}, jiao: {}, fen: {}, jiaoFen: {}, pct: {} };
+      spots.forEach((sp, i) => {
+        payload.closes[sp.name] = closes[i];
+        payload.jiao[sp.name] = splits[i].jiao;
+        payload.fen[sp.name] = splits[i].fen;
+        payload.jiaoFen[sp.name] = splits[i].value;
+        payload.pct[sp.name] = sp.pct;
+      });
+      payload.factor = parseInt(factorStr, 10);
+      payload.factorStr = factorStr;
+      payload.intraday = true;              // 标记：这是盘中实时价，非收盘定稿
+      records.push(payload);
+      intraday = spots.map((sp) => sp.name + "=" + sp.price + "(" + sp.src + ")").join("、");
+    } catch (e) {
+      errors.push("实时价失败: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  return {
+    updatedAt: bjStamp(),
+    source:
+      "日K（不复权）· " +
+      Object.keys(sources)
+        .map((n) => n + "=" + sources[n])
+        .join("、") +
+      (intraday ? " · 今日盘中实时价 " + intraday : "") +
+      " · Cloudflare Worker",
+    stocks: STOCKS.map((s) => ({ code: s.code, name: s.name })),
+    records,
+    errors,
+  };
+}
+
+
+/** 数据的“实质内容”指纹：只取日期/因子/收盘价，用于判断是否真的有新数据 */
+export function dataFingerprint(payload) {
+  const recs = (payload && payload.records) || [];
+  return JSON.stringify(recs.map((r) => [r.date, r.factorStr, r.closes]));
+}
+
+/** 推送到 GitHub（Contents API 覆盖写，与 GitHub Actions 并发安全）
+ *  若远端数据与本次实质内容一致则跳过提交（避免高频抓取刷屏仓库） */
+export async function pushToGitHub(env, payload) {
+  const token = env && env.GITHUB_TOKEN;
+  const repo = (env && env.GITHUB_REPO) || "YihanAimee/yaohao-lottery";
+  if (!token) return { ok: false, error: "未配置 GITHUB_TOKEN" };
+  const files = {
+    "data/factors.json": JSON.stringify(payload, null, 1) + "\n",
+    "data/factors.js": "window.FACTOR_DATA = " + JSON.stringify(payload, null, 1) + ";\n",
+    "data/status.json": JSON.stringify({
+      ok: true,
+      lastUpdated: payload.updatedAt,
+      lastDate: payload.records[payload.records.length - 1].date,
+      lastFactor: payload.records[payload.records.length - 1].factorStr,
+      records: payload.records.length,
+      error: null,
+      host: "cloudflare-worker",
+    }, null, 1) + "\n",
+  };
+  const b64 = (s) => btoa(unescape(encodeURIComponent(s)));
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "yaohao-worker",
+  };
+  for (const path of Object.keys(files)) {
+    const url = "https://api.github.com/repos/" + repo + "/contents/" + path;
+    let sha = null;
+    const cur = await fetch(url, { headers });
+    if (cur.ok) {
+      const j = await cur.json();
+      sha = j.sha;
+      // 实质内容未变化 → 整体跳过提交
+      if (path === "data/factors.json" && j.content) {
+        try {
+          const bin = atob(String(j.content).replace(/\s/g, ""));
+          const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          const remote = JSON.parse(new TextDecoder().decode(bytes));
+          if (dataFingerprint(remote) === dataFingerprint(payload)) {
+            return { ok: true, skipped: true, repo, reason: "数据无实质变化，未产生提交" };
+          }
+        } catch (e) { /* 解析失败则照常提交 */ }
+      }
+    }
+    const body = { message: "chore: 更新基准因子数据 (Cloudflare Worker)", content: b64(files[path]), branch: "main" };
+    if (sha) body.sha = sha;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, error: path + " -> HTTP " + res.status + " " + (await res.text()).slice(0, 160) };
+    }
+  }
+  return { ok: true, repo, files: Object.keys(files) };
+}
