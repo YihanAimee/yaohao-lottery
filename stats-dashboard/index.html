@@ -20,10 +20,23 @@
     <button class="btn active" data-days="14">近 14 天</button>
     <button class="btn" data-days="30">近 30 天</button>
     <button class="btn" id="btnRefresh">刷新</button>
+    <button class="btn" id="btnLogout">退出</button>
   </div>
 </header>
 
 <main>
+  <!-- 访问口令 -->
+  <section class="panel" id="loginBox" hidden>
+    <h2>需要访问口令 <span class="tag">数据不公开</span></h2>
+    <p class="muted">该看板的访问数据不公开，请输入访问口令后查看。</p>
+    <div class="login-row">
+      <input class="key-input" id="keyInput" type="password" placeholder="访问口令" autocomplete="off" spellcheck="false" />
+      <button class="btn" id="btnLogin">进入看板</button>
+    </div>
+    <p class="muted small" id="loginErr"></p>
+  </section>
+
+  <div id="dashMain" hidden>
   <div class="cards" id="cards"></div>
 
   <div class="panel">
@@ -68,6 +81,7 @@
     数据说明：仅记录 IP 的加盐哈希（用于去重统计独立访客，不保存原始 IP），不记录任何表单内容或身份信息。
     埋点为异步上报，不影响页面加载速度。
   </p>
+  </div>
 </main>
 
 <script src="app.js"></script>
