@@ -31,6 +31,7 @@
       <li><b>不支持地上 ↔ 地下互换</b>，也<b>不支持临停车位与固定车位互换</b>（本页面只收录固定车位区域）。</li>
       <li><b>本站没有登录与实名校验</b>，登记信息完全由本人自行填写，<b>不对换车位的结果负责</b>，一切以物业现场确认为准，请自行核实对方身份。</li>
       <li>登记内容会对其他登记人展示：<b>工号、当前车位区域、意向区域、摇中车位截图</b>与备注，请确认工号填写正确后再提交。</li>
+      <li><b>每个工号只能登记一次</b>；<b>意向区域 1 必填</b>，意向区域 2 选填（只填一个也可以）。如需修改，请先用「工号 + 防护码」删除原登记再重新提交。</li>
       <li>请设置 4 位<b>防护码</b>：互换成功后凭「工号 + 防护码」即可<b>自行删除登记信息</b>，防止登记信息被别人删除。</li>
     </ul>
   </section>
@@ -84,8 +85,8 @@
           </label>
 
           <label class="form-row">
-            <span class="form-label">意向区域 2 *</span>
-            <select class="select" id="want2" required></select>
+            <span class="form-label">意向区域 2<em class="form-hint">选填，可留空</em></span>
+            <select class="select" id="want2"></select>
           </label>
 
           <label class="form-row">
