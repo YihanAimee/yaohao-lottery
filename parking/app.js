@@ -4,24 +4,24 @@
   const $ = id => document.getElementById(id);
   const API = 'https://yaohao-stats.pages.dev';
 
-  // 区域白名单（与后端 stats/functions/_lib/areas.mjs 保持一致）
+  // 区域白名单（与后端 stats/functions/_lib/areas.mjs 保持一致，均带层级前缀）
   const GROUND_AREAS = [
-    'A区', 'B区',
-    'D区（靠近创牌南和8号门一侧）', 'D区（靠近创牌北和三翼鸟雕塑一侧）',
-    'F区（靠近模具A厅）', 'F区（靠近模具B厅）', 'F区（靠近模具C厅）',
-    'H区', 'K区', 'G区',
+    '地上-A区', '地上-B区',
+    '地上-D区（靠近创牌南和8号门一侧）', '地上-D区（靠近创牌北和三翼鸟雕塑一侧）',
+    '地上-F区（靠近模具A厅）', '地上-F区（靠近模具B厅）', '地上-F区（靠近模具C厅）',
+    '地上-H区', '地上-K区', '地上-G区',
   ];
   const UNDERGROUND_AREAS = [
-    '负1层A区', '负1层B区', '负1层C区', '负1层D区', '负1层E区',
-    '负2层A区', '负2层B区', '负2层C区', '负2层D区', '负2层E区',
+    '地下-负1层A区', '地下-负1层B区', '地下-负1层C区', '地下-负1层D区', '地下-负1层E区',
+    '地下-负2层A区', '地下-负2层B区', '地下-负2层C区', '地下-负2层D区', '地下-负2层E区',
   ];
 
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   function layerOf(area) {
-    if (GROUND_AREAS.indexOf(area) >= 0) return 'ground';
-    if (UNDERGROUND_AREAS.indexOf(area) >= 0) return 'underground';
+    if (GROUND_AREAS.indexOf(area) >= 0) return '地上';
+    if (UNDERGROUND_AREAS.indexOf(area) >= 0) return '地下';
     return '';
   }
 
@@ -37,19 +37,23 @@
     refreshWantOptions();
   }
 
-  /** 意向区域只列出与当前车位同层、且不同于当前车位的区域 */
+  /** 意向区域只列出与当前车位同层、且不同于当前车位的区域；意向 2 可留空 */
   function refreshWantOptions() {
     const cur = $('areaArea').value;
     const layer = layerOf(cur);
-    const list = (layer === 'ground' ? GROUND_AREAS : layer === 'underground' ? UNDERGROUND_AREAS : [])
+    const list = (layer === '地上' ? GROUND_AREAS : layer === '地下' ? UNDERGROUND_AREAS : [])
       .filter(a => a !== cur);
     const ph = list.length ? '请选择意向区域' : '请先选择当前车位区域';
-    ['want1', 'want2'].forEach(function (id) {
-      const el = $(id);
-      const old = el.value;
-      fillAreaSelect(el, list, ph);
-      if (list.indexOf(old) >= 0) el.value = old;
-    });
+
+    const el1 = $('want1');
+    const old1 = el1.value;
+    fillAreaSelect(el1, list, ph);
+    if (list.indexOf(old1) >= 0) el1.value = old1;
+
+    const el2 = $('want2');
+    const old2 = el2.value;
+    fillAreaSelect(el2, list, list.length ? '不填（只有一个意向区域）' : '请先选择当前车位区域');
+    if (list.indexOf(old2) >= 0) el2.value = old2;
   }
 
   /* ---------- 共享池 ---------- */
@@ -67,7 +71,7 @@
 
   function renderPool(d) {
     const rows = (d.pool || []).slice().sort(function (a, b) {
-      if (a.layer !== b.layer) return a.layer === 'ground' ? -1 : 1;
+      if (a.layer !== b.layer) return a.layer === '地上' ? -1 : 1;
       return b.in + b.out - (a.in + a.out);
     });
     const tb = $('poolTable').querySelector('tbody');
@@ -80,7 +84,7 @@
         const sign = diff > 0 ? '+' : '';
         return '<tr>' +
           '<td class="f" style="text-align:left">' + esc(r.area) + '</td>' +
-          '<td>' + (r.layer === 'ground' ? '地上' : '地下') + '</td>' +
+          '<td>' + esc(r.layer) + '</td>' +
           '<td><b>' + r.out + '</b></td>' +
           '<td><b>' + r.in + '</b></td>' +
           '<td class="' + cls + '">' + sign + diff + '</td>' +
@@ -153,8 +157,8 @@
 
     if (!area) return fail(msg, '请选择当前车位区域');
     if (!/^\d{8}$/.test(emp)) return fail(msg, '工号必须是 8 位数字');
-    if (!want1 || !want2) return fail(msg, '请选择两个意向区域');
-    if (want1 === want2) return fail(msg, '两个意向区域不能相同');
+    if (!want1) return fail(msg, '请选择意向区域 1');
+    if (want2 && want1 === want2) return fail(msg, '意向区域 1 与意向区域 2 不能相同');
     if (!/^\d{4}$/.test(code)) return fail(msg, '防护码必须是 4 位数字');
     if (!file) return fail(msg, '请上传摇中车位的截图');
 
@@ -235,7 +239,8 @@
       html += '<div class="my-records"><b>我的登记（' + d.mine.length + '）</b>' +
         d.mine.map(function (m) {
           return '<div class="my-item">' +
-            esc(m.registeredAt) + '　' + esc(m.area) + ' → ' + esc(m.want1) + ' / ' + esc(m.want2) +
+            esc(m.registeredAt) + '　' + esc(m.area) + ' → ' + esc(m.want1) +
+            (m.want2 ? ' / ' + esc(m.want2) : '') +
             (m.matched ? '　<span class="badge blue">已匹配</span>' : '') +
             (m.note ? '<br><span class="muted">备注：' + esc(m.note) + '</span>' : '') +
             '</div>';
