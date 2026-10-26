@@ -1,22 +1,59 @@
-/* 访问统计看板 · 纯原生实现（无外部依赖） */
+/* 访问统计看板 · 纯原生实现（无外部依赖） · 数据不公开，需访问口令 */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
+  const API_BASE = 'https://yaohao-stats.pages.dev';
+  const KEY_STORE = 'yh_stats_key';
   let days = 14;
+  let key = '';
+  try { key = sessionStorage.getItem(KEY_STORE) || ''; } catch (e) { key = ''; }
 
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  function apiUrl(path, params) {
+    const u = new URL(API_BASE + path);
+    if (params) Object.keys(params).forEach(function (k) { u.searchParams.set(k, params[k]); });
+    if (key) u.searchParams.set('key', key);
+    return u.toString();
+  }
+
+  function showLogin(msg) {
+    const box = $('loginBox');
+    if (box) box.hidden = false;
+    const main = $('dashMain');
+    if (main) main.hidden = true;
+    if (msg) { const e = $('loginErr'); if (e) e.textContent = msg; }
+    const inp = $('keyInput');
+    if (inp) setTimeout(function () { inp.focus(); }, 30);
+  }
+
+  function hideLogin() {
+    const box = $('loginBox');
+    if (box) box.hidden = true;
+    const main = $('dashMain');
+    if (main) main.hidden = false;
+  }
+
+  async function tryLogin(k) {
+    try {
+      const res = await fetch(API_BASE + '/api/login?key=' + encodeURIComponent(k), { cache: 'no-store' });
+      return res.ok;
+    } catch (e) { return false; }
+  }
+
   async function load() {
     let d;
     try {
-      const res = await fetch('https://yaohao-stats.pages.dev/api/stats?days=' + days, { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/stats', { days: days }), { cache: 'no-store' });
+      if (res.status === 401) { showLogin('需要访问口令才能查看统计数据'); return; }
       d = await res.json();
     } catch (e) {
       $('rangeTxt').textContent = '加载失败：' + e.message;
       return;
     }
-    if (!d.ok) { $('rangeTxt').textContent = '加载失败'; return; }
+    if (!d || !d.ok) { $('rangeTxt').textContent = '加载失败'; return; }
+    hideLogin();
     $('rangeTxt').textContent = d.from + ' ~ 今天（北京时间）· 每 30 秒自动刷新';
     renderCards(d.summary);
     renderChart(d.series);
@@ -196,6 +233,49 @@
   });
   $('btnRefresh').addEventListener('click', load);
   window.addEventListener('resize', function () { load(); });
-  load();
+
+  const btnLogin = $('btnLogin');
+  if (btnLogin) {
+    btnLogin.addEventListener('click', async function () {
+      const inp = $('keyInput');
+      const k = ((inp && inp.value) || '').trim();
+      if (!k) return;
+      const ok = await tryLogin(k);
+      if (!ok) { $('loginErr').textContent = '口令不正确'; return; }
+      key = k;
+      try { sessionStorage.setItem(KEY_STORE, k); } catch (e) {}
+      hideLogin();
+      load();
+    });
+    const inp2 = $('keyInput');
+    if (inp2) inp2.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') btnLogin.click();
+    });
+  }
+
+  const btnLogout = $('btnLogout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async function () {
+      try { await fetch(API_BASE + '/api/logout', { cache: 'no-store' }); } catch (e) {}
+      key = '';
+      try { sessionStorage.removeItem(KEY_STORE); } catch (e) {}
+      showLogin('已退出，请输入访问口令');
+    });
+  }
+
+  // 地址栏带 ?key= → 自动登录，随后把口令从地址栏移除（避免泄露）
+  (async function boot() {
+    const url = new URL(location.href);
+    const k = url.searchParams.get('key');
+    if (k) {
+      key = k;
+      try { sessionStorage.setItem(KEY_STORE, k); } catch (e) {}
+      await tryLogin(k);
+      url.searchParams.delete('key');
+      history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }
+    load();
+  })();
+
   setInterval(load, 30000);
 })();
