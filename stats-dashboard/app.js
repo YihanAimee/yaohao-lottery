@@ -59,13 +59,58 @@
     renderChart(d.series);
     renderElements(d.topElements);
     renderHeat(d.heat);
-    renderSimple('refList', d.topRefs, shortRef, r => r.n);
+    renderSimple('refList', d.topRefs, r => shortRef(r.ref), r => r.n);
     renderSimple('uaList', d.devices, r => r.ua, r => r.n);
     renderRecent(d.recent);
+    loadSwaps();
+  }
+
+  /* ---------- 车位互换登记原始信息 ---------- */
+  async function loadSwaps() {
+    const box = $('swapList');
+    if (!box) return;
+    try {
+      const res = await fetch(apiUrl('/api/swap/list', { limit: 300 }), { cache: 'no-store' });
+      if (res.status === 401) { box.innerHTML = '<div class="empty">未授权</div>'; return; }
+      const d = await res.json();
+      if (!d.ok) { box.innerHTML = '<div class="empty">加载失败</div>'; return; }
+      renderSwaps(d.list || []);
+    } catch (e) {
+      box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  function renderSwaps(list) {
+    const box = $('swapList');
+    if (!list.length) { box.innerHTML = '<div class="empty">暂无登记记录</div>'; return; }
+    const statusText = s => s === 'active' ? '<span class="badge" style="color:#21c08b">有效</span>'
+      : s === 'done' ? '<span class="badge" style="color:#3d8bff">已完成</span>'
+        : '<span class="badge" style="color:#8b97ad">已删除</span>';
+    let html = '<table><thead><tr>' +
+      '<th>登记日期</th><th>登记时间</th><th>当前车位区域</th><th>意向区域</th>' +
+      '<th>联系人工号</th><th>防护码</th><th>备注</th><th>状态</th><th>摇中车位截图</th>' +
+      '</tr></thead><tbody>';
+    list.forEach(function (r) {
+      const shotUrl = apiUrl('/api/swap/shot', { id: r.id });
+      html += '<tr>' +
+        '<td class="muted">' + esc(r.day) + '</td>' +
+        '<td class="muted">' + esc(r.time) + '</td>' +
+        '<td><b>' + esc(r.area) + '</b></td>' +
+        '<td>' + esc(r.want1) + '<br>' + esc(r.want2) + '</td>' +
+        '<td><code>' + esc(r.emp) + '</code></td>' +
+        '<td><code>' + esc(r.code) + '</code></td>' +
+        '<td class="muted swap-note">' + esc(r.note || '-') + '</td>' +
+        '<td>' + statusText(r.status) + (r.matched ? ' <span class="badge" style="color:#ffb020">已匹配</span>' : '') + '</td>' +
+        '<td><a href="' + esc(shotUrl) + '" target="_blank" rel="noopener">' +
+        '<img class="shot-thumb" loading="lazy" src="' + esc(shotUrl) + '" alt="摇中车位截图" /></a></td>' +
+        '</tr>';
+    });
+    box.innerHTML = html + '</tbody></table>';
   }
 
   function shortRef(r) {
     if (!r) return '(直接访问)';
+    if (typeof r !== 'string') return String(r).slice(0, 40);
     try {
       const u = new URL(r);
       const h = u.host.replace(/^www\./, '');
