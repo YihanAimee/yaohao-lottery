@@ -96,7 +96,7 @@
         '<td class="muted">' + esc(r.day) + '</td>' +
         '<td class="muted">' + esc(r.time) + '</td>' +
         '<td><b>' + esc(r.area) + '</b></td>' +
-        '<td>' + esc(r.want1) + '<br>' + esc(r.want2) + '</td>' +
+        '<td>' + esc(r.want1) + (r.want2 ? '<br>' + esc(r.want2) : '') + '</td>' +
         '<td><code>' + esc(r.emp) + '</code></td>' +
         '<td><code>' + esc(r.code) + '</code></td>' +
         '<td class="muted swap-note">' + esc(r.note || '-') + '</td>' +
