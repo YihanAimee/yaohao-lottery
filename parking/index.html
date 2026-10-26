@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>车位互换 · 共享池</title>
+<link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">互</div>
+    <div>
+      <h1>车位互换 · 共享池</h1>
+      <p class="sub" id="poolMeta">加载中…</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn ghost" href="../">返回走势图</a>
+    <button class="btn primary" id="btnRefresh">刷新共享池</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 规则提醒 -->
+  <section class="card notice-card">
+    <div class="notice-title">互换规则与风险提示（请先阅读）</div>
+    <ul class="notice-list">
+      <li><b>只能地上换地上、地下换地下</b>：地上固定车位仅可与地上固定车位互换；地下固定车位仅可与地下固定车位互换。</li>
+      <li><b>不支持地上 ↔ 地下互换</b>，也<b>不支持临停车位与固定车位互换</b>（本页面只收录固定车位区域）。</li>
+      <li><b>本站没有登录与实名校验</b>，登记信息完全由本人自行填写，<b>不对换车位的结果负责</b>，一切以物业现场确认为准，请自行核实对方身份。</li>
+      <li>登记内容会对其他登记人展示：<b>工号、当前车位区域、意向区域、摇中车位截图</b>与备注，请确认工号填写正确后再提交。</li>
+      <li>请设置 4 位<b>防护码</b>：互换成功后凭「工号 + 防护码」即可<b>自行删除登记信息</b>，防止登记信息被别人删除。</li>
+    </ul>
+  </section>
+
+  <!-- 共享池 -->
+  <section class="card">
+    <div class="card-head">
+      <h2>共享池</h2>
+      <span class="muted" id="poolSummary">加载中…</span>
+    </div>
+    <div class="pool-wrap">
+      <table class="grid-table" id="poolTable">
+        <thead>
+          <tr>
+            <th>车位区域</th>
+            <th>层级</th>
+            <th>想换出</th>
+            <th>想选进</th>
+            <th>供需差</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="muted small">「想换出」= 该区域有多少个车位想换走；「想选进」= 有多少人想换进该区域；「供需差」= 想选进 − 想换出，正数表示该区域车位偏紧。</p>
+  </section>
+
+  <div class="grid-2">
+    <!-- 登记 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>登记我的车位</h2>
+        <span class="muted small">带 * 为必填</span>
+      </div>
+
+      <form id="swapForm" autocomplete="off">
+        <div class="form-grid">
+          <label class="form-row">
+            <span class="form-label">当前车位区域 *</span>
+            <select class="select" id="areaArea" required></select>
+          </label>
+
+          <label class="form-row">
+            <span class="form-label">联系人工号 *<em class="form-hint">8 位数字</em></span>
+            <input class="input" id="emp" inputmode="numeric" maxlength="8" placeholder="例如 12345678" required />
+          </label>
+
+          <label class="form-row">
+            <span class="form-label">意向区域 1 *</span>
+            <select class="select" id="want1" required></select>
+          </label>
+
+          <label class="form-row">
+            <span class="form-label">意向区域 2 *</span>
+            <select class="select" id="want2" required></select>
+          </label>
+
+          <label class="form-row">
+            <span class="form-label">防护码 *<em class="form-hint">4 位数字，用于删除登记</em></span>
+            <input class="input" id="code" inputmode="numeric" maxlength="4" placeholder="例如 1234" required />
+          </label>
+
+          <label class="form-row">
+            <span class="form-label">摇中车位截图 *</span>
+            <input class="input file-input" id="shot" type="file" accept="image/*" required />
+          </label>
+
+          <label class="form-row full">
+            <span class="form-label">备注<em class="form-hint">选填</em></span>
+            <textarea class="input textarea" id="note" rows="3" maxlength="300" placeholder="例如：希望同层靠近电梯，需带充电桩等"></textarea>
+          </label>
+        </div>
+
+        <div class="shot-preview" id="shotPreview" hidden>
+          <img id="shotImg" alt="摇中车位截图预览" />
+          <span class="muted small" id="shotInfo"></span>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn primary" type="submit" id="btnSubmit">提交登记</button>
+          <button class="btn ghost" type="button" id="btnReset">重置</button>
+        </div>
+        <div class="form-msg" id="formMsg"></div>
+      </form>
+    </section>
+
+    <!-- 查询 / 取消 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>查看我的匹配</h2>
+        <span class="muted small">凭工号 + 防护码</span>
+      </div>
+
+      <div class="query-row">
+        <input class="input" id="qEmp" inputmode="numeric" maxlength="8" placeholder="工号（8 位数字）" />
+        <input class="input" id="qCode" inputmode="numeric" maxlength="4" placeholder="防护码（4 位）" />
+        <button class="btn primary" id="btnQuery">查询</button>
+      </div>
+      <div class="result-box" id="queryBox"><p class="muted small">输入工号与防护码即可查看是否有人与你互相匹配。</p></div>
+
+      <div class="card-head" style="margin-top:22px">
+        <h2>取消我的登记</h2>
+      </div>
+      <div class="query-row">
+        <input class="input" id="dEmp" inputmode="numeric" maxlength="8" placeholder="工号（8 位数字）" />
+        <input class="input" id="dCode" inputmode="numeric" maxlength="4" placeholder="防护码（4 位）" />
+        <button class="btn ghost" id="btnRemove">删除登记</button>
+      </div>
+      <div class="form-msg" id="removeMsg"></div>
+    </section>
+  </div>
+
+  <p class="muted small" style="text-align:center">
+    车位互换仅提供信息撮合平台，不对互换结果承担任何责任 · 共享池每 30 秒自动刷新
+  </p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
