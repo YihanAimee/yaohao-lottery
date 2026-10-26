@@ -329,3 +329,39 @@ table.dist td.miss { color: var(--muted); }
 .modal-card h3 { margin-bottom: 12px; font-size: 16px; }
 .rule-list { margin: 0 0 14px; padding-left: 20px; line-height: 1.9; font-size: 13px; color: var(--muted); }
 .rule-list b { color: var(--text); }
+
+/* ---------- 车位互换 ---------- */
+.notice-card { border-color: rgba(255,176,32,.38); background: linear-gradient(180deg, rgba(255,176,32,.08), transparent 60%), var(--card); }
+.notice-title { font-size: 14px; font-weight: 700; color: var(--amber); margin-bottom: 10px; }
+.notice-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.95; color: var(--muted); }
+.notice-list b { color: var(--text); }
+
+.pool-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; max-height: 460px; overflow-y: auto; }
+.pool-wrap .grid-table th { position: sticky; top: 0; background: var(--card-2); z-index: 1; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+@media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-row.full { grid-column: 1 / -1; }
+.form-label { font-size: 12.5px; color: var(--muted); }
+.form-label em { font-style: normal; font-size: 11.5px; margin-left: 6px; color: rgba(139,151,173,.75); }
+.form-row .select, .form-row .input { width: 100%; }
+.file-input { padding: 6px 8px; }
+
+.shot-preview { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); }
+.shot-preview img { max-height: 96px; border-radius: 8px; border: 1px solid var(--line); }
+
+.form-msg { margin-top: 12px; font-size: 12.8px; line-height: 1.8; color: var(--muted); }
+.form-msg.ok { color: var(--green); }
+.form-msg.err { color: var(--red); }
+
+.query-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.query-row .input { flex: 1 1 130px; min-width: 120px; }
+
+.result-box { margin-top: 12px; }
+.my-records { font-size: 12.8px; line-height: 1.8; color: var(--muted); }
+.my-item { padding: 8px 0; border-bottom: 1px dashed rgba(39,48,65,.9); }
+.match-box { margin-top: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(33,192,139,.32); background: rgba(33,192,139,.07); font-size: 12.8px; line-height: 1.8; }
+.match-box b { color: var(--green); }
+.match-item { padding: 6px 0; color: var(--muted); }
+.match-item b { color: var(--text); }
