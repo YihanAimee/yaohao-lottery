@@ -89,3 +89,10 @@ a { color: var(--blue); }
   padding: 8px 12px; border-radius: 9px; font-size: 14px; outline: none;
 }
 .key-input:focus { border-color: var(--blue); }
+
+/* 车位互换登记原始信息 */
+.shot-thumb {
+  max-height: 56px; max-width: 120px; border-radius: 6px;
+  border: 1px solid var(--line); cursor: zoom-in; display: block;
+}
+.swap-note { max-width: 220px; white-space: normal; text-align: left; }
