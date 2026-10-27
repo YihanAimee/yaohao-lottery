@@ -6,6 +6,7 @@
   const KEY_STORE = 'yh_stats_key';
   let days = 14;
   let key = '';
+  let forceFresh = false;      // 手动刷新时跳过缓存直查数据库
   try { key = sessionStorage.getItem(KEY_STORE) || ''; } catch (e) { key = ''; }
 
   const esc = s => String(s == null ? '' : s)
@@ -44,17 +45,23 @@
 
   async function load() {
     let d;
+    const fresh = forceFresh ? 1 : 0;
+    forceFresh = false;
     try {
-      const res = await fetch(apiUrl('/api/stats', { days: days }), { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/stats', { days: days, fresh: fresh }), { cache: 'no-store' });
       if (res.status === 401) { showLogin('需要访问口令才能查看统计数据'); return; }
       d = await res.json();
     } catch (e) {
-      $('rangeTxt').textContent = '加载失败：' + e.message;
+      setRange('加载失败：' + e.message, true);
       return;
     }
-    if (!d || !d.ok) { $('rangeTxt').textContent = '加载失败'; return; }
+    if (!d || !d.ok) {
+      setRange('加载失败：' + ((d && d.error) || '未知错误'), true);
+      return;
+    }
     hideLogin();
-    $('rangeTxt').textContent = d.from + ' ~ 今天（北京时间）· 每 30 秒自动刷新';
+    setRange(d.from + ' ~ 今天（北京时间）· 每 3 分钟自动刷新'
+      + (d.stale ? '（数据库繁忙，显示上一次缓存）' : ''), false);
     renderCards(d.summary);
     renderChart(d.series);
     renderElements(d.topElements);
@@ -62,7 +69,13 @@
     renderSimple('refList', d.topRefs, r => shortRef(r.ref), r => r.n);
     renderSimple('uaList', d.devices, r => r.ua, r => r.n);
     renderRecent(d.recent);
-    loadSwaps();
+    loadSwaps(fresh);
+  }
+
+  function setRange(text, warn) {
+    const el = $('rangeTxt');
+    el.textContent = text;
+    el.className = warn ? 'range-warn' : '';
   }
 
   /* ---------- 车位互换登记原始信息 ---------- */
@@ -72,14 +85,14 @@
     return s === 'active' ? '有效' : s === 'done' ? '已完成' : '已删除';
   }
 
-  async function loadSwaps() {
+  async function loadSwaps(force) {
     const box = $('swapList');
     if (!box) return;
     try {
-      const res = await fetch(apiUrl('/api/swap/list', { limit: 300 }), { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/swap/list', { limit: 300, fresh: force ? 1 : 0 }), { cache: 'no-store' });
       if (res.status === 401) { box.innerHTML = '<div class="empty">未授权</div>'; return; }
       const d = await res.json();
-      if (!d.ok) { box.innerHTML = '<div class="empty">加载失败</div>'; return; }
+      if (!d.ok) { box.innerHTML = '<div class="empty">加载失败：' + esc(d.error || '') + '</div>'; return; }
       lastSwaps = d.list || [];
       renderSwaps(lastSwaps);
     } catch (e) {
@@ -331,13 +344,13 @@
       load();
     });
   });
-  $('btnRefresh').addEventListener('click', load);
+  $('btnRefresh').addEventListener('click', function () { forceFresh = true; load(); });
   window.addEventListener('resize', function () { load(); });
 
   const btnExportCsv = $('btnExportCsv');
   if (btnExportCsv) btnExportCsv.addEventListener('click', exportSwapCsv);
   const btnSwapRefresh = $('btnSwapRefresh');
-  if (btnSwapRefresh) btnSwapRefresh.addEventListener('click', loadSwaps);
+  if (btnSwapRefresh) btnSwapRefresh.addEventListener('click', function () { loadSwaps(1); });
 
   const btnLogin = $('btnLogin');
   if (btnLogin) {
@@ -382,5 +395,5 @@
     load();
   })();
 
-  setInterval(load, 30000);
+  setInterval(load, 180000);
 })();
