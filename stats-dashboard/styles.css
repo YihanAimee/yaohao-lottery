@@ -91,6 +91,8 @@ a { color: var(--blue); }
 .key-input:focus { border-color: var(--blue); }
 
 /* 车位互换登记原始信息 */
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.panel-head h2 { margin-bottom: 0; }
 .shot-thumb {
   max-height: 56px; max-width: 120px; border-radius: 6px;
   border: 1px solid var(--line); cursor: zoom-in; display: block;
