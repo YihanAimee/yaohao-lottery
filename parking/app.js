@@ -93,7 +93,7 @@
       }).join('');
     }
     $('poolSummary').textContent = '共 ' + (d.total || 0) + ' 条有效登记 · ' + (d.matched || 0) + ' 条已匹配';
-    $('poolMeta').textContent = '共享池每 30 秒自动刷新 · 更新于 ' + new Date().toLocaleTimeString('zh-CN');
+    $('poolMeta').textContent = '共享池每 2 分钟自动刷新 · 更新于 ' + new Date().toLocaleTimeString('zh-CN');
   }
 
   /* ---------- 截图压缩 ---------- */
@@ -292,5 +292,5 @@
   $('btnRefresh').addEventListener('click', loadPool);
   initAreaOptions();
   loadPool();
-  setInterval(loadPool, 30000);
+  setInterval(loadPool, 120000);
 })();
