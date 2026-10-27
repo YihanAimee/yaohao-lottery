@@ -92,8 +92,21 @@
           '</tr>';
       }).join('');
     }
-    $('poolSummary').textContent = '共 ' + (d.total || 0) + ' 条有效登记 · ' + (d.matched || 0) + ' 条已匹配';
+    $('poolSummary').textContent = '共 ' + (d.total || 0) + ' 条有效登记 · ' + (d.matched || 0) + ' 条已匹配'
+      + (typeof d.removed === 'number' ? ' · 已删除登记 ' + d.removed + ' 条' : '');
     $('poolMeta').textContent = '共享池每 2 分钟自动刷新 · 更新于 ' + new Date().toLocaleTimeString('zh-CN');
+
+    // 已成功换位（大数字）
+    const num = $('successNum');
+    if (num) {
+      if (typeof d.success === 'number') {
+        num.textContent = d.success;
+        num.className = 'hero-num';
+      } else {
+        num.textContent = '--';
+        num.className = 'hero-num dim';
+      }
+    }
   }
 
   /* ---------- 截图压缩 ---------- */
