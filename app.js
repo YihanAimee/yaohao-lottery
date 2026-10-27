@@ -1113,10 +1113,21 @@
     { url: 'api/factor', label: '在线接口' },
   ];
 
+  /* 带超时的 fetch：避免接口异常时页面一直转圈 */
+  async function fetchWithTimeout(url, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, ms || 6000);
+    try {
+      return await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function fetchLive() {
     for (const api of REMOTE_APIS) {
       try {
-        const res = await fetch(api.url + '?t=' + Date.now(), { cache: 'no-store' });
+        const res = await fetchWithTimeout(api.url + '?t=' + Date.now(), 6000);
         if (!res.ok) continue;
         const json = await res.json();
         if (json && json.records && json.records.length) {
