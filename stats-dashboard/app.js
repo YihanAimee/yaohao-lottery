@@ -66,6 +66,12 @@
   }
 
   /* ---------- 车位互换登记原始信息 ---------- */
+  let lastSwaps = [];
+
+  function swapStatusText(s) {
+    return s === 'active' ? '有效' : s === 'done' ? '已完成' : '已删除';
+  }
+
   async function loadSwaps() {
     const box = $('swapList');
     if (!box) return;
@@ -74,7 +80,8 @@
       if (res.status === 401) { box.innerHTML = '<div class="empty">未授权</div>'; return; }
       const d = await res.json();
       if (!d.ok) { box.innerHTML = '<div class="empty">加载失败</div>'; return; }
-      renderSwaps(d.list || []);
+      lastSwaps = d.list || [];
+      renderSwaps(lastSwaps);
     } catch (e) {
       box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>';
     }
@@ -101,11 +108,59 @@
         '<td><code>' + esc(r.code) + '</code></td>' +
         '<td class="muted swap-note">' + esc(r.note || '-') + '</td>' +
         '<td>' + statusText(r.status) + (r.matched ? ' <span class="badge" style="color:#ffb020">已匹配</span>' : '') + '</td>' +
-        '<td><a href="' + esc(shotUrl) + '" target="_blank" rel="noopener">' +
+        '<td>' +
+        '<a href="' + esc(shotUrl) + '" target="_blank" rel="noopener">' +
         '<img class="shot-thumb" loading="lazy" src="' + esc(shotUrl) + '" alt="摇中车位截图" /></a></td>' +
         '</tr>';
     });
     box.innerHTML = html + '</tbody></table>';
+
+    // 图片加载失败兜底（截图缺失 / 链接失效）
+    Array.prototype.forEach.call(box.querySelectorAll('img.shot-thumb'), function (img) {
+      img.addEventListener('error', function () {
+        const span = document.createElement('span');
+        span.className = 'muted';
+        span.textContent = '无图';
+        if (img.parentNode) img.parentNode.replaceChild(span, img);
+      });
+    });
+  }
+
+  /* ---------- 导出 CSV ---------- */
+  function csvCell(v) {
+    const s = String(v == null ? '' : v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function exportSwapCsv() {
+    if (!lastSwaps.length) { alert('暂无登记记录可导出'); return; }
+    const head = ['登记日期', '登记时间', '当前车位区域', '层级', '意向区域1', '意向区域2',
+      '联系人工号', '防护码', '备注', '状态', '是否已匹配', '摇中车位截图链接'];
+    const rows = lastSwaps.map(function (r) {
+      return [r.day, r.time, r.area, r.layer, r.want1, r.want2 || '', r.emp, r.code,
+        r.note || '', swapStatusText(r.status), r.matched ? '是' : '否',
+        apiUrl('/api/swap/shot', { id: r.id })];
+    });
+    const lines = [['# 本文件含访问口令（截图链接），请勿外传']]
+      .concat([head])
+      .concat(rows)
+      .map(function (row) { return row.map(csvCell).join(','); })
+      .join('\r\n');
+    // BOM 头，保证 Excel 正确识别 UTF-8 中文
+    const blob = new Blob(['\uFEFF' + lines], { type: 'text/csv;charset=utf-8' });
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    const name = '车位互换登记_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
+      '_' + p(d.getHours()) + p(d.getMinutes()) + '.csv';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 1000);
   }
 
   function shortRef(r) {
@@ -278,6 +333,11 @@
   });
   $('btnRefresh').addEventListener('click', load);
   window.addEventListener('resize', function () { load(); });
+
+  const btnExportCsv = $('btnExportCsv');
+  if (btnExportCsv) btnExportCsv.addEventListener('click', exportSwapCsv);
+  const btnSwapRefresh = $('btnSwapRefresh');
+  if (btnSwapRefresh) btnSwapRefresh.addEventListener('click', loadSwaps);
 
   const btnLogin = $('btnLogin');
   if (btnLogin) {
