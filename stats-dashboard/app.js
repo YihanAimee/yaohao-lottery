@@ -61,7 +61,8 @@
     }
     hideLogin();
     setRange(d.from + ' ~ 今天（北京时间）· 每 3 分钟自动刷新'
-      + (d.stale ? '（数据库繁忙，显示上一次缓存）' : ''), false);
+      + (d.stale ? '（数据库繁忙，显示上一次缓存）' : '')
+      + (d.notice ? ' · ' + d.notice : ''), false);
     renderCards(d.summary);
     renderChart(d.series);
     renderElements(d.topElements);
@@ -85,6 +86,22 @@
     return s === 'active' ? '有效' : s === 'done' ? '已完成' : '已删除';
   }
 
+  /** 已成功换位：双方登记都已删除，且双方车位区域互为意向（按对计数） */
+  function countSuccessPairs(list) {
+    const done = list.filter(r => r.status === 'removed' || r.status === 'done');
+    let n = 0;
+    for (let i = 0; i < done.length; i++) {
+      for (let j = i + 1; j < done.length; j++) {
+        const a = done[i], b = done[j];
+        if (a.layer !== b.layer) continue;
+        const aWantB = a.want1 === b.area || a.want2 === b.area;
+        const bWantA = b.want1 === a.area || b.want2 === a.area;
+        if (aWantB && bWantA) n++;
+      }
+    }
+    return n;
+  }
+
   async function loadSwaps(force) {
     const box = $('swapList');
     if (!box) return;
@@ -103,6 +120,11 @@
   function renderSwaps(list) {
     const box = $('swapList');
     if (!list.length) { box.innerHTML = '<div class="empty">暂无登记记录</div>'; return; }
+    const successEl = $('swapSuccess');
+    if (successEl) {
+      const n = countSuccessPairs(list);
+      successEl.textContent = '已成功换位 ' + n + ' 对';
+    }
     const statusText = s => s === 'active' ? '<span class="badge" style="color:#21c08b">有效</span>'
       : s === 'done' ? '<span class="badge" style="color:#3d8bff">已完成</span>'
         : '<span class="badge" style="color:#8b97ad">已删除</span>';
