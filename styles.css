@@ -331,6 +331,22 @@ table.dist td.miss { color: var(--muted); }
 .rule-list b { color: var(--text); }
 
 /* ---------- 车位互换 ---------- */
+.hero-card { display: flex; align-items: center; gap: 22px; padding: 20px 24px; }
+.hero-num {
+  font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero-num.dim { background: none; -webkit-text-fill-color: var(--muted); color: var(--muted); }
+.hero-side { min-width: 0; }
+.hero-label { font-size: 17px; font-weight: 700; letter-spacing: .5px; margin-bottom: 4px; }
+.hero-side p { margin: 0; line-height: 1.7; }
+@media (max-width: 560px) {
+  .hero-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .hero-num { font-size: 44px; }
+}
+
 .notice-card { border-color: rgba(255,176,32,.38); background: linear-gradient(180deg, rgba(255,176,32,.08), transparent 60%), var(--card); }
 .notice-title { font-size: 14px; font-weight: 700; color: var(--amber); margin-bottom: 10px; }
 .notice-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.95; color: var(--muted); }
