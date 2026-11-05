@@ -1,9 +1,9 @@
 {
  "ok": true,
- "lastUpdated": "2026-11-05T15:02:41+08:00",
+ "lastUpdated": "2026-11-05T15:31:04+08:00",
  "lastDate": "2026-11-05",
  "lastFactor": "247836",
- "records": 83,
+ "records": 86,
  "error": null,
  "host": "cloudflare-worker"
 }
