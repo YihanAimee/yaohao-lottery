@@ -1,5 +1,5 @@
 window.FACTOR_DATA = {
- "updatedAt": "2026-11-18T16:08:35+08:00",
+ "updatedAt": "2026-11-18T16:22:29+08:00",
  "source": "东方财富 push2his 日K（不复权）",
  "stocks": [
   {
